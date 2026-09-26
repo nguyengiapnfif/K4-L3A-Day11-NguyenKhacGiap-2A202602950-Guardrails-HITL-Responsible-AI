@@ -99,12 +99,24 @@ except FileNotFoundError:
 # Blue Team — fixed OpenRouter Liquid
 # ---------------------------------------------------------------------------
 
+def blue_uses_openai_fallback() -> bool:
+    """Local fallback: no OpenRouter key but an OpenAI key → Blue runs on OpenAI."""
+    return not get_openrouter_api_key() and bool(get_openai_api_key())
+
+
 def get_blue_provider() -> str:
+    if blue_uses_openai_fallback():
+        return PROVIDER_OPENAI
     return BLUE_PROVIDER
 
 
 def get_blue_model() -> str:
-    # Hard-locked; env cannot override for the graded Blue Team path.
+    # Locked to OpenRouter liquid when OPENROUTER_API_KEY is set.
+    if blue_uses_openai_fallback():
+        return (
+            os.environ.get("BLUE_OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip()
+            or DEFAULT_OPENAI_MODEL
+        )
     return BLUE_MODEL
 
 
@@ -113,7 +125,9 @@ def get_openrouter_api_key() -> str:
 
 
 def blue_client_kwargs() -> dict:
-    """OpenAI SDK kwargs pointing at OpenRouter (Blue Team only)."""
+    """OpenAI SDK kwargs for Blue: OpenRouter, or OpenAI when falling back."""
+    if blue_uses_openai_fallback():
+        return red_openai_client_kwargs()
     return {
         "api_key": get_openrouter_api_key() or None,
         "base_url": (
@@ -236,11 +250,14 @@ def is_harder_model() -> bool:
 
 def setup_api_key():
     """Ensure keys for Blue (OpenRouter) + Red / Red Advance (OpenAI or Gemini)."""
-    if not get_openrouter_api_key():
+    if not get_openrouter_api_key() and not get_openai_api_key():
         os.environ["OPENROUTER_API_KEY"] = input(
             "Enter OpenRouter API Key (Blue): "
         ).strip()
-    print(f"Blue  — {blue_provider_label()}  [LOCKED]")
+    if blue_uses_openai_fallback():
+        print(f"Blue  — {blue_provider_label()}  [FALLBACK: no OPENROUTER_API_KEY]")
+    else:
+        print(f"Blue  — {blue_provider_label()}  [LOCKED]")
 
     red = get_red_provider()
     model = get_red_model()
